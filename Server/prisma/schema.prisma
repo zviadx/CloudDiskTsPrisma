@@ -1,0 +1,45 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id        Int     @id @unique @default(autoincrement())
+  email     String  @unique
+  password  String
+  diskSpace BigInt? @default(10737418240) // 10 GB
+  usedSpace BigInt? @default(10)
+  avatar    String?
+  path      String? @default("")
+  files     File[]
+}
+
+model File {
+  id          String   @id @default(uuid())
+  name        String
+  type        String
+  access_link String?
+  size        BigInt   @default(0) // BigInt matches MongoDB's Number capacity and allows >2GB file sizes
+  path        String   @default("")
+  date        DateTime @default(now())
+
+  // Owner Relation
+  userId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Folder Hierarchy (Self-relation matching parent/childs in MongoDB)
+  parentId String?
+  parent   File?   @relation("FolderContents", fields: [parentId], references: [id], onDelete: Cascade)
+  children File[]  @relation("FolderContents")
+
+  createdAt DateTime @default(now())
+}

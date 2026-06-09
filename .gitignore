@@ -1,0 +1,15 @@
+# Ignore node_modules in both folders
+.idea/
+Client/node_modules/
+Server/node_modules/
+
+# Ignore environment variables
+Server/.env
+
+# Ignore build outputs
+Client/dist/
+Client/build/
+
+# Ignore local upload folders (e.g. where user files are stored)
+Server/static/
+Server/fileStore/
