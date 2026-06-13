@@ -1,6 +1,4 @@
 import { Router, type Request, type Response } from "express"
-// import User from "../models/User"
-// import File from "../models/File"
 import prisma from "../db/prisma"
 import crypt from "bcryptjs"
 import { check, validationResult } from "express-validator"
@@ -54,7 +52,9 @@ authRouter.post('/registration',
 authRouter.post('/login', async (req, res) => {
     try {
         const { email, password } = req.body
-        const logged = await User.findOne({ email })
+        const logged = await prisma.user.findUnique({
+            where: { email }
+        })
         if (!logged) {
             return res.status(400).json({ message: "User named like this is not in data base" })
         }
@@ -62,11 +62,11 @@ authRouter.post('/login', async (req, res) => {
         if (!comparePass) {
             return res.status(400).json({ message: "Password is incorrect" })
         }
-        const token = jwt.sign({ id: logged._id }, config.get("secretKey"), { expiresIn: "3h" })
+        const token = jwt.sign({ id: logged.id }, process.env.SECRETKEY as string, { expiresIn: "3h" })
         return (res.status(200).json({
             token,
             user: {
-                id: logged._id,
+                id: logged.id,
                 email: logged.email,
                 diskSpace: logged.diskSpace,
                 usedSpace: logged.usedSpace,

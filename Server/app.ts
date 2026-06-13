@@ -4,8 +4,6 @@ import authRouter from './routes/auth.router';
 import fileRouter from './routes/file_routes';
 import fileUpload from 'express-fileupload';
 import corsMiddleware from './middleware/cors.middleware';
-// import dotenv from 'dotenv';
-// dotenv.config();
 
 const PORT = process.env.PORT || 5555
 

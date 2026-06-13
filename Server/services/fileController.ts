@@ -2,13 +2,13 @@
 
 import "dotenv/config"
 import { Request, Response, NextFunction } from 'express'
-import File from "../models/File"
-import User from "../models/User"
+import { Prisma } from "@prisma/client"
 import fs from "fs"
 import userFolder from "./userFolder"
 import isOrNotFolder from "./isOrNotFolder"
 import fileServices from "./fileDelete"
-import Uuid from "uuid"
+import { v4 as uuid } from "uuid"
+import prisma from "../db/prisma"
 
 
 class fileController {
@@ -16,33 +16,44 @@ class fileController {
         if (req.body.type === "dir") {
             try {
                 const { name, type, parent } = req.body
-                const file = new File({ name, type, parent })
-                const currUser = await User.findOne({ _id: req.user.id })
-                file.user = currUser._id
+                const currUser = await prisma.user.findUnique({
+                    where: { id: req.user!.id }
+                })
+                const file = await prisma.file.create({
+                    data: {
+                        name,
+                        type,
+                        parentId: parent ?? null,
+                        userId: currUser!.id
+                    }
+                })
 
-                const parentFolder = await File.findOne({ _id: parent })
+                const parentFolder = await prisma.file.findUnique({
+                    where: { id: parent }
+                })
 
                 if (parentFolder) {
-                    file.path = `${parentFolder.path}\\${name}`
-                    await parentFolder.childs.push(file.id)
-                    await parentFolder.save()
-                    await file.save()
-                    await userFolder.createUserFolder(file)
+                    const updatedFile = await prisma.file.update({
+                        where: { id: file.id },
+                        data: { path: `${parentFolder.path}\\${name}` }
+                    })
 
-                    return (res.json({ file }))
+                    await userFolder.createUserFolder(updatedFile)
+
+                    return (res.json({ file: updatedFile }))
                 } else {
-                    file.path = name
-                    currUser.files.push(file.id)
-                    file.parent = null
-                    await currUser.save()
-                    await file.save()
-                    await userFolder.createUserFolder(file)
+                    const updatedFile = await prisma.file.update({
+                        where: { id: file.id },
+                        data: { path: name }
+                    })
+
+                    await userFolder.createUserFolder(updatedFile)
 
                     return (res.json({ file: file }))
                 }
 
 
-            } catch (err) {
+            } catch (err: any) {
                 return res.status(400).json({ message: err.message })
             }
         } else {
@@ -51,28 +62,58 @@ class fileController {
     }
 
 
-    async getFiles(req, res) {
+    async getFiles(req: Request, res: Response) {
         try {
             const { sort } = req.query
             let files
 
             switch (sort) {
                 case "name":
-                    files = await File.find({ user: req.user.id, parent: req.query.parent }).sort({ name: 1 })
+                    files = await prisma.file.findMany({
+                        where: {
+                            userId: req.user!.id,
+                            parentId: req.query.parent as string ?? null
+                        },
+                        orderBy: { name: "asc" }
+                    })
                     break
                 case "type":
-                    files = await File.find({ user: req.user.id, parent: req.query.parent }).sort({ type: 1 })
+                    files = await prisma.file.findMany({
+                        where: {
+                            userId: req.user!.id,
+                            parentId: req.query.parent as string ?? null
+                        },
+                        orderBy: { type: "asc" }
+                    })
                     break
                 case "size":
-                    files = await File.find({ user: req.user.id, parent: req.query.parent }).sort({ size: 1 })
+                    files = await prisma.file.findMany({
+                        where: {
+                            userId: req.user!.id,
+                            parentId: req.query.parent as string ?? null
+                        },
+                        orderBy: { size: "asc" }
+                    })
+                    break
+                case "date":
+                    files = await prisma.file.findMany({
+                        where: {
+                            userId: req.user!.id,
+                            parentId: req.query.parent as string ?? null
+                        },
+                        orderBy: { createdAt: "asc" }
+                    })
                     break
                 default:
-                    files = await File.find({ user: req.user.id, parent: req.query.parent })
+                    files = await prisma.file.findMany({
+                        where: {
+                            userId: req.user!.id,
+                            parentId: req.query.parent as string ?? null
+                        }
+                    })
                     break
             }
 
-            // const files = await File.find({user: req.user.id, parent: req.query.parent})
-            // console.log(files)
             return res.json(files)
 
         } catch (err) {
@@ -81,26 +122,39 @@ class fileController {
     }
 
 
-    async fileUpload(req, res) {
+    async fileUpload(req: Request, res: Response) {
         try {
-            const file = req.files.file
-            const user = await User.findOne({ _id: req.user.id })
-            // console.log(user._id)
+            const file: any = req.files
+            const user = await prisma.user.findUnique({ where: { id: req.user!.id } })
 
-            if (user.usedSpace + file.size > user.diskSpace) {
+            if (user!.usedSpace + file.size > user!.diskSpace!) {
                 return res.status(400).json({ message1: "There is not enough space to save the file. Please free up some space on your disk." })
             }
 
-            user.usedSpace = user.usedSpace + file.size
-            const parent = await File.findOne({ user: req.user.id, _id: req.body.parent })
+            // user!.usedSpace = user!.usedSpace + file.size
+            // const parent = await File.findOne({ user: req.user.id, _id: req.body.parent })
+
+            await prisma.user.update({
+                where: { id: user!.id },
+                data: {
+                    usedSpace: user!.usedSpace! + file.size
+                }
+            })
+
+            const parent = await prisma.file.findUnique({
+                where: {
+                    id: req.body.parent,
+                    userId: req.user!.id
+                }
+            })
 
             let path;
             let filePath
             if (parent) {
-                path = `${config.get("filePath")}\\${user._id}\\${parent.path}\\${file.name}`
+                path = `${process.env.FILE_PATH}\\${user!.id}\\${parent.path}\\${file.name}`
                 filePath = `${parent.path}\\${file.name}`
             } else {
-                path = `${config.get("filePath")}\\${user._id}\\${file.name}`
+                path = `${process.env.FILE_PATH}\\${user!.id}\\${file.name}`
                 filePath = `${file.name}`
             }
 
@@ -110,137 +164,187 @@ class fileController {
             await file.mv(path)
             const type = file.name.split(".").pop()
 
-            await user.save()
-            const dbFile = new File({
-                name: file.name,
-                type,
-                size: file.size,
-                path: filePath,
-                user: user._id,
-                parent: parent?._id
+
+            const dbFile = await prisma.file.create({
+                data: {
+                    name: file.name,
+                    type,
+                    size: file.size,
+                    path: filePath,
+                    userId: user!.id,
+                    parentId: parent?.id ?? null
+                }
             })
 
-            await dbFile.save()
             res.json(dbFile)
 
 
-        } catch (err) {
+        } catch (err: any) {
             return res.status(500).json({ message3: err.message })
         }
     }
 
-    async fileDownload(req, res) {
+    async fileDownload(req: Request, res: Response) {
         try {
-            const file = await File.findOne({ user: req.user.id, _id: req.query.file })
-            // const realPath = `${config.get("filePath")}\\${req.user.id}\\${file.path}`
-            const path = `${config.get("filePath")}\\${req.user.id}\\${file.path}`
+            const file = await prisma.file.findUnique({
+                where: {
+                    id: req.query.file as string,
+                    userId: req.user!.id
+                }
+            })
+            const path = `${process.env.FILE_PATH}\\${req.user!.id}\\${file!.path}`
             if (fs.existsSync(path)) {
-                return res.download(path, file.name)
+                return res.download(path, file!.name)
             }
             return res.status(500).json({ message: "Download Error" })
-        } catch (err) {
-            console.log(err)
+        } catch (err: any) {
             return res.status(500).json({ message: err.message })
         }
     }
 
-    async fileDelete(req, res) {
+    async fileDelete(req: Request, res: Response) {
         try {
 
-            const file = await File.findOne({ user: req.user.id, _id: req.query.id })
+            const file = await prisma.file.findUnique({
+                where: {
+                    id: req.query.id as string,
+                    userId: req.user!.id
+                }
+            })
             if (!file) {
                 return res.status(400).json({ message: 'No such file exists. Please refresh the page and try again.' })
             }
-            fileServices.fileDeleter(file)
-            // await file.remove()
-            await File.findOneAndDelete({ _id: file._id }, { lean: true })
+            await fileServices.fileDeleter(file)
+            await prisma.file.delete({
+                where: {
+                    id: file.id
+                }
+            })
             res.status(200).json({ message: 'File successfully deleted' })
 
-        } catch (err) {
+        } catch (err: any) {
             return res.status(500).json({ message: err.message })
         }
     }
 
-    async fileSearch(req, res) {
+    async fileSearch(req: Request, res: Response) {
         try {
-            let files = await File.find({ user: req.user.id })
-            files = files.filter(file => file.name.includes(req.query.name))
+            const files = await prisma.file.findMany({
+                where: {
+                    userId: req.user!.id,
+                    name: {
+                        contains: req.query.name as string
+                    }
+                }
+            })
             return res.json(files)
-        } catch (err) {
+        } catch (err: any) {
             return res.status(500).json({ message: err.message })
         }
     }
 
-    async uploadAvatar(req, res) {
+    async uploadAvatar(req: Request, res: Response) {
         try {
-            const user = await User.findById({ _id: req.user.id })
-            const file = req.files.file
-            const avatarName = Uuid.v4() + '.svg'
-            const avatarPath = `${config.get("staticPath")}\\${avatarName}`
+            const user = await prisma.user.findUnique({
+                where: {
+                    id: req.user!.id
+                }
+            })
+            const file: any = req.files
+            const avatarName = uuid() + '.svg'
+            const avatarPath = `${process.env.FILE_PATH}\\${avatarName}`
             await file.mv(avatarPath)
-            user.avatar = avatarName
-            await user.save()
+            await prisma.user.update({
+                where: {
+                    id: req.user!.id
+                },
+                data: {
+                    avatar: avatarName
+                }
+            })
             return res.json(user)
-        } catch (err) {
+        } catch (err: any) {
             return res.status(500).json({ message: err.message })
         }
     }
 
-    async deleteAvatar(req, res) {
+    async deleteAvatar(req: Request, res: Response) {
         try {
-            const user = await User.findById({ _id: req.user.id })
-            if (!user.avatar) {
-                return res.json({ message: "ავატარკა უკვე აღარ არის, ნე ტიკაი პალცემ" })
+            const user = await prisma.user.findUnique({
+                where: {
+                    id: req.user!.id
+                }
+            })
+            if (!user!.avatar) {
+                return res.json({ message: "No avatar found" })
             }
-            const avPath = `${config.get("staticPath")}\\${user.avatar}`
-            user.avatar = null
+            const avPath = `${process.env.FILE_PATH}\\${user!.avatar}`
+            await prisma.user.update({
+                where: {
+                    id: req.user!.id
+                },
+                data: {
+                    avatar: null
+                }
+            })
             fs.unlinkSync(avPath)
-            await user.save()
             return res.json(user)
-        } catch (err) {
-            return res.status(400).json({ message: err.message })
+        } catch (err: any) {
+            return res.status(500).json({ message: err.message })
         }
     }
 
-    async createFolder(req, res) {
+    async createFolder(req: Request, res: Response) {
         try {
             const { folder, parentFolderId } = req.body
-            const currUser = await User.findOne({ _id: req.user.id })
-            let Folder = await new File({ type: "dir", name: folder, user: currUser._id, size: 888 })
-            await currUser.files.push(Folder.id)
-            await currUser.save()
+            const user = await prisma.user.findUnique({
+                where: {
+                    id: req.user!.id
+                }
+            })
+            let Folder = await prisma.file.create({
+                data: {
+                    name: folder,
+                    type: "dir",
+                    size: 888,
+                    userId: user!.id,
+                    parentId: parentFolderId
+                }
+            })
             console.log(Folder)
-            // Folder.user = currUser._id
             let path
-
             if (!parentFolderId) {
                 path = folder
-                Folder.path = path
-                console.log("ID IS" + Folder._id)
-                Folder.parent = null
-                await Folder.save()
-                await isOrNotFolder.folderExists(Folder)
-
+                await prisma.file.update({
+                    where: {
+                        id: Folder.id
+                    },
+                    data: {
+                        path: path,
+                        parentId: null
+                    }
+                })
+                // await isOrNotFolder.folderExists(Folder)
                 return (res.status(200).json({ Folder: Folder }))
             } else {
-                const parent = await File.findOne({ user: currUser._id, _id: parentFolderId })
-                path = `${parent.path}\\${folder}`
-                Folder.path = path
-                console.log(Folder)
-                Folder.parent = parent._id
-                await Folder.save()
-                await parent.childs.push(Folder.id)
-                await parent.save()
-                await folderExists.folderExists(Folder)
-
+                const parent = await prisma.file.findUnique({
+                    where: {
+                        id: parentFolderId
+                    }
+                })
+                path = `${parent!.path}\\${folder}`
+                await prisma.file.update({
+                    where: {
+                        id: Folder.id
+                    },
+                    data: {
+                        path: path,
+                        parentId: parent!.id
+                    }
+                })
+                await isOrNotFolder.folderExists(Folder)
                 return (res.status(200).json({ Folder: Folder }))
             }
-
-            // await currUser.save()
-            // await parent.save()
-            // await Folder.save()
-            //
-            // return (res.json({Folder: Folder}))
 
         } catch (e) {
             return res.status(400).json({ message: "A folder with that name already exists. Do you want to replace it?" })
@@ -249,4 +353,4 @@ class fileController {
 
 }
 
-module.exports = new fileController()
+export default new fileController()
