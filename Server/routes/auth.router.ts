@@ -29,7 +29,7 @@ authRouter.post('/registration',
 
             if (isUser) {
                 console.log(`user named ${email} already exists`)
-                return res.status(400).json({ message: "user named this already exists" })
+                return res.status(400).json({ message: `A user with email ${email} already exists` })
             }
             const pass = await crypt.hash(password, 8)
             const user = await prisma.user.create({

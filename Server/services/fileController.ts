@@ -131,8 +131,6 @@ class fileController {
                 return res.status(400).json({ message1: "There is not enough space to save the file. Please free up some space on your disk." })
             }
 
-            // user!.usedSpace = user!.usedSpace + file.size
-            // const parent = await File.findOne({ user: req.user.id, _id: req.body.parent })
 
             await prisma.user.update({
                 where: { id: user!.id },
@@ -148,8 +146,8 @@ class fileController {
                 }
             })
 
-            let path;
-            let filePath
+            let path: string;
+            let filePath: string
             if (parent) {
                 path = `${process.env.FILE_PATH}\\${user!.id}\\${parent.path}\\${file.name}`
                 filePath = `${parent.path}\\${file.name}`

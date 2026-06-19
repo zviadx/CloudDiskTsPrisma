@@ -1,11 +1,12 @@
 import fs from "fs"
 import "dotenv/config"
+import type { IFile, IFolder } from "../types/type"
 
 
 
 class fileServices {
 
-    getPath(file: any): string | undefined {
+    getPath(file: IFolder): string | undefined {
         return `${process.env.FILEPATH}\\("filePath")}\\${file.user}\\${file.path}`
     }
 
