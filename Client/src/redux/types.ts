@@ -6,7 +6,7 @@ export interface IFileSlice {
 }
 
 
-interface ICurrentUser {
+export interface ICurrentUser {
     id?: number,
     email?: string,
     diskSpace?: bigint,

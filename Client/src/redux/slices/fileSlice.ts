@@ -22,11 +22,11 @@ const fileSlice = createSlice({
             }
             state.dirStack.push(action.payload)
         },
-        modal: (state: IFileSlice, action) => {
+        setModal: (state: IFileSlice, action) => {
             state.modal = action.payload
         }
     }
 })
 
-export const { setFile, getDir, dirStack, modal } = fileSlice.actions
+export const { setFile, getDir, dirStack, setModal } = fileSlice.actions
 export default fileSlice.reducer
